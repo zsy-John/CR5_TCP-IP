@@ -17,6 +17,7 @@ import socket
 import struct
 import numpy as np
 import math
+import logging
 
 # ·全局变量设置
 # 1.端口号设置
@@ -32,6 +33,10 @@ receive_state_port = 30004
 # 下面这两个位姿近似等价
 home_joint_config = [90, 0, 0, 0, -90, 180]
 home_tool_config = [141.464238, -108.644036, 1046.060387, 90.850948, 0.003464, -0.102484]
+test_tool_config = [-350,-500,400,90,90,0]
+
+# 配置logging输出的最低等级
+logging.basicConfig(level=logging.DEBUG)
 
 
 class CR5_Robot:
@@ -352,7 +357,7 @@ class CR5_Robot:
         # 打印当前速度比例
         state_data = cr5_receive.tcp_socket.recv(1500)
         speed_scaling = cr5_receive.parse_tcp_state_data(state_data, 'speed_ratio')
-        print(f"修改前的全局速度比例是:{speed_scaling}%")
+        print(f"修改前的全局速度比例是:{speed_scaling[0]}%")
 
         # 创建机械臂用来发布指令的socket连接并发布指令
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -363,12 +368,12 @@ class CR5_Robot:
         # 检查全局速度比例是否修改成功
         state_data = cr5_receive.tcp_socket.recv(1500) # 指定最多接收1500字节的数据（越疆机械臂是1440个字节）
         speed_scaling = cr5_receive.parse_tcp_state_data(state_data, 'speed_ratio')
-        while speed_scaling != ratio:       # TODO:检查该命令到底能不能修改全局速度比例
+        while speed_scaling != ratio:
             self.tcp_socket.send(str.encode(tcp_command))
             state_data = cr5_receive.tcp_socket.recv(1500)
             speed_scaling = cr5_receive.parse_tcp_state_data(state_data, 'speed_ratio')
             time.sleep(0.01)
-        print(f"全局速度比例已设置为:{speed_scaling}%")
+        print(f"全局速度比例已设置为:{speed_scaling[0]}%")
         self.tcp_socket.close()
         cr5_receive.tcp_socket.close()
 
@@ -555,8 +560,17 @@ class CR5_Robot:
         tcp_command = tcp_command + ")\n"
         state_data = cr5_receive.tcp_socket.recv(1500)
         actual_tool_positions = cr5_receive.parse_tcp_state_data(state_data, 'cartesian_info')
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"运动前的笛卡尔坐标：{actual_tool_positions}")
         self.tcp_socket.send(str.encode(tcp_command))
+
+        # 重新解析机械臂实时状态信息，判断逆解是否存在
+        for i in range(10):     # 循环执行多次，确保读到最新的改变后的机械臂状态
+            state_data = cr5_receive.tcp_socket.recv(1500)
+            robot_mode = cr5_receive.parse_tcp_state_data(state_data, 'robot_mode')
+            if robot_mode[0] == 9:
+                logging.error("机械臂运动学逆解求解失败，当前任务规划失败！！！")
+                raise ValueError("请检查目标点后重新尝试！！！")
 
         # 检查是否抵达目标点
         state_data = cr5_receive.tcp_socket.recv(1500)
@@ -606,8 +620,17 @@ class CR5_Robot:
         tcp_command += ")\n"
         state_data = cr5_receive.tcp_socket.recv(1500)
         actual_joint_angle = cr5_receive.parse_tcp_state_data(state_data, 'joint_data')
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"运动前的关节坐标:{actual_joint_angle}")
         self.tcp_socket.send(str.encode(tcp_command))
+
+        # 重新解析机械臂实时状态信息，判断逆解是否存在
+        for i in range(10):     # 循环执行多次，确保读到最新的改变后的机械臂状态
+            state_data = cr5_receive.tcp_socket.recv(1500)
+            robot_mode = cr5_receive.parse_tcp_state_data(state_data, 'robot_mode')
+            if robot_mode[0] == 9:
+                logging.error("机械臂运动学逆解求解失败，当前任务规划失败！！！")
+                raise ValueError("请检查目标点后重新尝试！！！")
 
         # 检查是否抵达目标点
         state_data = cr5_receive.tcp_socket.recv(1500)
@@ -620,11 +643,12 @@ class CR5_Robot:
         cr5_receive.tcp_socket.close()
 
         # 结束函数提示
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"机械臂末端已抵达指定坐标点{actual_joint_angle}！！！")
         print("joint_move_j()函数结束执行".center(70,'-'))
 
     # 机械臂末端执行器直线运动（笛卡尔坐标形式）
-    def move_l(self, tool_configuration):       # TODO:功能待验证
+    def move_l(self, tool_configuration):
         '''
         原型：MovL(X,Y,Z,Rx,Ry,Rz,User=index,Tool=index,SpeedL=R,AccL=R)
         描述：从当前位置以直线运动方式运动至笛卡尔坐标目标点。
@@ -658,8 +682,17 @@ class CR5_Robot:
         tcp_command = tcp_command + ")\n"
         state_data = cr5_receive.tcp_socket.recv(1500)
         actual_tool_positions = cr5_receive.parse_tcp_state_data(state_data, 'cartesian_info')
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"运动前的笛卡尔坐标：{actual_tool_positions}")
         self.tcp_socket.send(str.encode(tcp_command))
+
+        # 重新解析机械臂实时状态信息，判断逆解是否存在
+        for i in range(10):     # 循环执行多次，确保读到最新的改变后的机械臂状态
+            state_data = cr5_receive.tcp_socket.recv(1500)
+            robot_mode = cr5_receive.parse_tcp_state_data(state_data, 'robot_mode')
+            if robot_mode[0] == 9:
+                logging.error("机械臂运动学逆解求解失败，当前任务规划失败！！！")
+                raise ValueError("请检查目标点后重新尝试！！！")
 
         # 检查是否抵达目标点
         state_data = cr5_receive.tcp_socket.recv(1500)
@@ -672,11 +705,12 @@ class CR5_Robot:
         cr5_receive.tcp_socket.close()
 
         # 结束函数提示
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"机械臂末端已抵达指定坐标点{actual_tool_positions}！！！")
         print("move_l()函数结束执行".center(70, '-'))
 
     # 机械臂末端执行器沿圆弧运动至目标点
-    def arc(self, intermediate_point_configuration, goal_configuration):        # TODO:功能待验证
+    def arc(self, intermediate_point_configuration, goal_configuration):
         '''
         原型：Arc(X1,Y1,Z1,Rx1,Ry1,Rz1,X2,Y2,Z2,Rx2,Ry2,Rz2,User=index,Tool=index,SpeedL=R,AccL=R)
         描述：从当前位置以圆弧插补方式运动至目标点。
@@ -714,8 +748,17 @@ class CR5_Robot:
         tcp_command = tcp_command + ( "%f)\n" % goal_configuration[5] )
         state_data = cr5_receive.tcp_socket.recv(1500)
         actual_tool_positions = cr5_receive.parse_tcp_state_data(state_data, 'cartesian_info')
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"运动前的笛卡尔坐标：{actual_tool_positions}")
         self.tcp_socket.send(str.encode(tcp_command))
+
+        # 重新解析机械臂实时状态信息，判断逆解是否存在
+        for i in range(10):     # 循环执行多次，确保读到最新的改变后的机械臂状态
+            state_data = cr5_receive.tcp_socket.recv(1500)
+            robot_mode = cr5_receive.parse_tcp_state_data(state_data, 'robot_mode')
+            if robot_mode[0] == 9:
+                logging.error("机械臂运动学逆解求解失败，当前任务规划失败！！！")
+                raise ValueError("请检查目标点后重新尝试！！！")
 
         # 检查是否抵达目标点
         state_data = cr5_receive.tcp_socket.recv(1500)
@@ -728,6 +771,7 @@ class CR5_Robot:
         cr5_receive.tcp_socket.close()
 
         # 结束函数提示
+        np.set_printoptions(precision=6, suppress=True, floatmode='fixed')      # 控制输出不要用科学计数法，而是保留小数点后6位 
         print(f"机械臂末端已抵达指定坐标点{actual_tool_positions}！！！")
         print("arc()函数结束执行".center(70, '-'))
 
@@ -1049,22 +1093,30 @@ if __name__ == "__main__":
     '''
     cr5_robot_receive = CR5_Robot_Receive(tcp_port=receive_state_port)      # 用来接收机械臂实时状态信息
     cr5_robot = CR5_Robot(tcp_port=dashboard_port,cr5_receive=cr5_robot_receive)      # 用来发布命令
-    
-    # cr5_robot.set_speed_l(70)
-    # cr5_robot.set_speed_j(50)
 
     # cr5_robot.clear_error()
     # cr5_robot.power_on()
     # cr5_robot.enable_robot()
+    
+    # cr5_robot.set_global_speed_ratio(10)
+    # cr5_robot.set_speed_l(70)
+    # cr5_robot.set_speed_j(50)
+
     # cr5_robot.move_j([-350,-500,400,90,90,0])
     # cr5_robot.joint_move_j(home_joint_config)
+    # cr5_robot.move_l([-500,100,200,150,0,0])
     # cr5_robot.disable_robot()
     # cr5_robot.get_robot_mode()
     # cr5_robot.testRobot()
 
     # cr5_robot.brake_control(6,0)
 
+    # cr5_robot.get_tool_position()
 
+    # cr5_robot.enable_robot()
+    # cr5_robot.set_global_speed_ratio(10)
+    # cr5_robot.arc([-350,-200,200,150,0,90],[100,-400,200,150,0,90])
+    # cr5_robot.disable_robot()
 
 '''
 *************************
